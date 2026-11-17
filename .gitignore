@@ -221,3 +221,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- project ---
+# recorded market data and API dumps never go into git
+data/
+*.parquet
+logs/
+scratch/
+.ipynb_checkpoints/
