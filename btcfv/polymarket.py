@@ -10,13 +10,25 @@ GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
 S = requests.Session()  # reuses the connection across calls
 
-MONTHS = ["january", "february", "march", "april", "may", "june", "july",
-          "august", "september", "october", "november", "december"]
+MONTHS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
 
 
+# turns date in format of (year, month, day) to slug format 'bitcoin-above-on-month-day-year'
 def slug_for(d: date) -> str:
-    """date(2026, 11, 22) -> 'bitcoin-above-on-november-22-2026'"""
-    return f"bitcoin-above-on-{MONTHS[d.month - 1]}-{d.day}-{d.year}"
+    return f"bitcoin-above-on-{MONTHS[d.month-1]}-{d.day}-{d.year}"
 
 
 def event_slugs(today: date, days_ahead: int = 7) -> list[str]:
@@ -34,15 +46,19 @@ def discover(slugs: list[str]) -> list[dict]:
             for m in event["markets"]:
                 if not m.get("active") or m.get("closed"):
                     continue
-                outcomes = json.loads(m["outcomes"])     # '["Yes", "No"]' -> list
+                outcomes = json.loads(m["outcomes"])  # '["Yes", "No"]' -> list
                 tokens = json.loads(m["clobTokenIds"])
-                rows.append({
-                    "event_slug": slug,
-                    "end_date": m["endDate"],
-                    "strike": int(m["groupItemTitle"].replace(",", "")),  # "64,000" -> 64000
-                    "yes_token": tokens[outcomes.index("Yes")],
-                    "condition_id": m["conditionId"],
-                })
+                rows.append(
+                    {
+                        "event_slug": slug,
+                        "end_date": m["endDate"],
+                        "strike": int(
+                            m["groupItemTitle"].replace(",", "")
+                        ),  # "64,000" -> 64000
+                        "yes_token": tokens[outcomes.index("Yes")],
+                        "condition_id": m["conditionId"],
+                    }
+                )
     return rows
 
 
@@ -57,8 +73,10 @@ def books(tokens: list[str]) -> dict[str, dict]:
         best_bid = max(bids) if bids else (None, None)  # highest price someone pays
         best_ask = min(asks) if asks else (None, None)  # lowest price someone sells
         out[b["asset_id"]] = {
-            "bid": best_bid[0], "bid_size": best_bid[1],
-            "ask": best_ask[0], "ask_size": best_ask[1],
+            "bid": best_bid[0],
+            "bid_size": best_bid[1],
+            "ask": best_ask[0],
+            "ask_size": best_ask[1],
             "book_ts": b.get("timestamp"),
         }
     return out
@@ -79,5 +97,9 @@ def snapshot() -> pd.DataFrame:
 if __name__ == "__main__":
     pd.set_option("display.width", 200)
     df = snapshot()
-    print(df[["event_slug", "strike", "bid", "ask", "bid_size", "ask_size"]].to_string())
-    print(f"\n{len(df)} strikes across {df['event_slug'].nunique()} events at {df['ts'].iloc[0]:%Y-%m-%d %H:%M} UTC")
+    print(
+        df[["event_slug", "strike", "bid", "ask", "bid_size", "ask_size"]].to_string()
+    )
+    print(
+        f"\n{len(df)} strikes across {df['event_slug'].nunique()} events at {df['ts'].iloc[0]:%Y-%m-%d %H:%M} UTC"
+    )
