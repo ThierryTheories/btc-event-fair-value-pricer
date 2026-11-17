@@ -1,52 +1,83 @@
-from zoneinfo import ZoneInfo
+"""Polymarket side: find open 'Bitcoin above ___' events and read their YES order books."""
 
-import requests
 import json
-import datetime as dt
+from datetime import date, datetime, timedelta, timezone
 
-et_day = dt.datetime.now(ZoneInfo("America/New_York")).day
-
+import pandas as pd
+import requests
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
+S = requests.Session()  # reuses the connection across calls
 
-# 1. Gamma: find the event and get each strike's YES token
+MONTHS = ["january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december"]
 
-resp = requests.get(
-    f"{GAMMA}/events",
-    params={f"slug": f"bitcoin-above-on-november-{et_day}-2026"},
-    timeout=20,
-)
-resp.raise_for_status()
-events = resp.json()
 
-btc_data = []
-for event in events:
-    for market in event["markets"]:
-        if not market.get("active") or market.get("closed"):
-            continue
+def slug_for(d: date) -> str:
+    """date(2026, 11, 22) -> 'bitcoin-above-on-november-22-2026'"""
+    return f"bitcoin-above-on-{MONTHS[d.month - 1]}-{d.day}-{d.year}"
 
-        outcomes = json.loads(market["outcomes"])
-        token_ids = json.loads(market["clobTokenIds"])
-        yes_token = token_ids[outcomes.index("Yes")]
-        strike_str = market["question"].split("$")[1].split(" ")[0]
-        strike = int(strike_str.replace(",", ""))  # "94,000" -> 94000
 
-        btc_data.append({"strike": strike, "yes_token": yes_token})
+def event_slugs(today: date, days_ahead: int = 7) -> list[str]:
+    """Today plus the next 7 days: each event opens about a week before it resolves."""
+    return [slug_for(today + timedelta(days=i)) for i in range(days_ahead + 1)]
 
-btc_data.sort(key=lambda d: d["strike"])
 
-# 2. CLOB: get the order book for each YES token
-for row in btc_data:
-    r = requests.get(f"{CLOB}/book", params={"token_id": row["yes_token"]}, timeout=20)
+def discover(slugs: list[str]) -> list[dict]:
+    """Gamma: one row per open strike, with its YES token."""
+    rows = []
+    for slug in slugs:
+        r = S.get(f"{GAMMA}/events", params={"slug": slug}, timeout=20)
+        r.raise_for_status()
+        for event in r.json():  # empty list if the event doesn't exist yet
+            for m in event["markets"]:
+                if not m.get("active") or m.get("closed"):
+                    continue
+                outcomes = json.loads(m["outcomes"])     # '["Yes", "No"]' -> list
+                tokens = json.loads(m["clobTokenIds"])
+                rows.append({
+                    "event_slug": slug,
+                    "end_date": m["endDate"],
+                    "strike": int(m["groupItemTitle"].replace(",", "")),  # "64,000" -> 64000
+                    "yes_token": tokens[outcomes.index("Yes")],
+                    "condition_id": m["conditionId"],
+                })
+    return rows
+
+
+def books(tokens: list[str]) -> dict[str, dict]:
+    """CLOB: every order book in one request, keyed by token id."""
+    r = S.post(f"{CLOB}/books", json=[{"token_id": t} for t in tokens], timeout=20)
     r.raise_for_status()
-    book = r.json()
+    out = {}
+    for b in r.json():
+        bids = [(float(x["price"]), float(x["size"])) for x in b.get("bids", [])]
+        asks = [(float(x["price"]), float(x["size"])) for x in b.get("asks", [])]
+        best_bid = max(bids) if bids else (None, None)  # highest price someone pays
+        best_ask = min(asks) if asks else (None, None)  # lowest price someone sells
+        out[b["asset_id"]] = {
+            "bid": best_bid[0], "bid_size": best_bid[1],
+            "ask": best_ask[0], "ask_size": best_ask[1],
+            "book_ts": b.get("timestamp"),
+        }
+    return out
 
-    bids = [float(b["price"]) for b in book.get("bids", [])]
-    asks = [float(a["price"]) for a in book.get("asks", [])]
 
-    row["bid"] = max(bids) if bids else None  # best bid = highest
-    row["ask"] = min(asks) if asks else None  # best ask = lowest
+def snapshot() -> pd.DataFrame:
+    """One Polymarket snapshot of every open BTC 'above' strike."""
+    ts = datetime.now(timezone.utc)
+    markets = discover(event_slugs(ts.date()))
+    if not markets:
+        return pd.DataFrame()
+    quotes = books([m["yes_token"] for m in markets])
+    df = pd.DataFrame([{**m, **quotes.get(m["yes_token"], {})} for m in markets])
+    df["ts"] = ts
+    return df.sort_values(["end_date", "strike"]).reset_index(drop=True)
 
-for row in btc_data:
-    print(row["strike"], row["bid"], row["ask"])
+
+if __name__ == "__main__":
+    pd.set_option("display.width", 200)
+    df = snapshot()
+    print(df[["event_slug", "strike", "bid", "ask", "bid_size", "ask_size"]].to_string())
+    print(f"\n{len(df)} strikes across {df['event_slug'].nunique()} events at {df['ts'].iloc[0]:%Y-%m-%d %H:%M} UTC")
