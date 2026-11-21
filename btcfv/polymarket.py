@@ -82,6 +82,9 @@ def books(tokens: list[str]) -> dict[str, dict]:
     return out
 
 
+# POLYMARKET Expires 17.00 UTC ,Deribit Options 08:00 UTC
+
+
 def snapshot() -> pd.DataFrame:
     """One Polymarket snapshot of every open BTC 'above' strike."""
     ts = datetime.now(timezone.utc)
