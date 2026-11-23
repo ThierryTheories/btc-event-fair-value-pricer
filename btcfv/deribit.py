@@ -47,7 +47,7 @@ def index_price() -> float:
 #                     }
 #                 )
 #     return rows
-def option_chain():
+def option_chain(curr_price):
     r = S.get(
         f"{DERIBIT}/get_book_summary_by_currency",
         params={"currency": "BTC", "kind": "option"},
@@ -61,12 +61,20 @@ def option_chain():
         exp_date_raw = parse_instrument[1]
         exp_date_parsed = datetime.strptime(exp_date_raw, "%d%b%y")
         today = datetime.today()
-        if today <= exp_date_parsed <= today + timedelta(days=9):
+        strike_price = int(parse_instrument[2])
+
+        # We take 9 days as a filter because we want to track a whole week,
+        # and we have to take into account polymarket aswell;,
+        # so for 7 days in poly its 9 in deribit option
+        if (
+            today <= exp_date_parsed <= today + timedelta(days=9)
+            and strike_price * 0.75 <= curr_price <= strike_price * 1.25
+        ):
             rows.append(
                 {
                     "instrument": opt["instrument_name"],
                     "expiry_date": exp_date_raw,
-                    "strike_price": int(parse_instrument[2]),
+                    "strike_price": strike_price,
                     "mark_price": opt["mark_price"],
                     "underlying_price": opt["underlying_price"],
                     "option": parse_instrument[3],
@@ -79,5 +87,4 @@ def option_chain():
 
 
 if __name__ == "__main__":
-    print(index_price())
-    print(option_chain())
+    print(option_chain(index_price()))
