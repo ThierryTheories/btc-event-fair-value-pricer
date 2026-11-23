@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pandas as pd
 import requests
@@ -20,33 +20,6 @@ def index_price() -> float:
     return data["result"]["index_price"]
 
 
-# POLYMARKET Expires 17.00 UTC ,Deribit Options 08:00 UTC
-
-
-# def discover(slugs: list[str]) -> list[dict]:
-#     """Gamma: one row per open strike, with its YES token."""
-#     rows = []
-#     for slug in slugs:
-#         r = S.get(f"{GAMMA}/events", params={"slug": slug}, timeout=20)
-#         r.raise_for_status()
-#         for event in r.json():  # empty list if the event doesn't exist yet
-#             for m in event["markets"]:
-#                 if not m.get("active") or m.get("closed"):
-#                     continue
-#                 outcomes = json.loads(m["outcomes"])  # '["Yes", "No"]' -> list
-#                 tokens = json.loads(m["clobTokenIds"])
-#                 rows.append(
-#                     {
-#                         "event_slug": slug,
-#                         "end_date": m["endDate"],
-#                         "strike": int(
-#                             m["groupItemTitle"].replace(",", "")
-#                         ),  # "64,000" -> 64000
-#                         "yes_token": tokens[outcomes.index("Yes")],
-#                         "condition_id": m["conditionId"],
-#                     }
-#                 )
-#     return rows
 def option_chain(curr_price):
     r = S.get(
         f"{DERIBIT}/get_book_summary_by_currency",
@@ -56,24 +29,23 @@ def option_chain(curr_price):
     r.raise_for_status()
     data = r.json()
     rows = []
+    today = datetime.now(timezone.utc)
     for opt in data["result"]:
         parse_instrument = opt["instrument_name"].split("-")
-        exp_date_raw = parse_instrument[1]
-        exp_date_parsed = datetime.strptime(exp_date_raw, "%d%b%y")
-        today = datetime.today()
+        exp_date_parsed = datetime.strptime(parse_instrument[1], "%d%b%y").replace(
+            hour=8, tzinfo=timezone.utc
+        )
         strike_price = int(parse_instrument[2])
 
-        # We take 9 days as a filter because we want to track a whole week,
-        # and we have to take into account polymarket aswell;,
-        # so for 7 days in poly its 9 in deribit option
+        # we take 14 days because theres a missalignment, theres no daily expiration
         if (
-            today <= exp_date_parsed <= today + timedelta(days=9)
-            and strike_price * 0.75 <= curr_price <= strike_price * 1.25
+            today <= exp_date_parsed <= today + timedelta(days=14)
+            and curr_price * 0.75 <= strike_price <= curr_price * 1.25
         ):
             rows.append(
                 {
                     "instrument": opt["instrument_name"],
-                    "expiry_date": exp_date_raw,
+                    "expiry_date": exp_date_parsed,
                     "strike_price": strike_price,
                     "mark_price": opt["mark_price"],
                     "underlying_price": opt["underlying_price"],
