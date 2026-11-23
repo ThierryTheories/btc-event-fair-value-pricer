@@ -9,8 +9,6 @@ DERIBIT = "https://www.deribit.com/api/v2/public"
 S = requests.Session()
 
 
-
-
 def index_price() -> float:
     """Current BTC/USD index price from Deribit."""
     r = S.get(
@@ -23,6 +21,7 @@ def index_price() -> float:
 
 
 # POLYMARKET Expires 17.00 UTC ,Deribit Options 08:00 UTC
+
 
 # def discover(slugs: list[str]) -> list[dict]:
 #     """Gamma: one row per open strike, with its YES token."""
@@ -50,38 +49,33 @@ def index_price() -> float:
 #     return rows
 def option_chain():
     r = S.get(
-            f"{DERIBIT}/get_book_summary_by_currency", params={"currency": "BTC", "kind" : "option"}, timeout=20
-        )
+        f"{DERIBIT}/get_book_summary_by_currency",
+        params={"currency": "BTC", "kind": "option"},
+        timeout=20,
+    )
     r.raise_for_status()
     data = r.json()
     rows = []
     for opt in data["result"]:
         parse_instrument = opt["instrument_name"].split("-")
-        rows.append(
-            {
-                "instrument" : opt["instrument_name"],
-                "expiry_date" : parse_instrument[1],
-                "strike_price" : int(parse_instrument[2]),
-                "mark_price" : opt['mark_price'],
-                "underlying_price" : opt["underlying_price"],
-                "option" : parse_instrument[3],
-                "ask" : opt['ask_price'],
-                "bid" : opt['bid_price'],
-                "mark_iv" : opt['mark_iv']
-
-
-            }
-        )
+        exp_date_raw = parse_instrument[1]
+        exp_date_parsed = datetime.strptime(exp_date_raw, "%d%b%y")
+        today = datetime.today()
+        if today <= exp_date_parsed <= today + timedelta(days=9):
+            rows.append(
+                {
+                    "instrument": opt["instrument_name"],
+                    "expiry_date": exp_date_raw,
+                    "strike_price": int(parse_instrument[2]),
+                    "mark_price": opt["mark_price"],
+                    "underlying_price": opt["underlying_price"],
+                    "option": parse_instrument[3],
+                    "ask": opt["ask_price"],
+                    "bid": opt["bid_price"],
+                    "mark_iv": opt["mark_iv"],
+                }
+            )
     return rows
-
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
