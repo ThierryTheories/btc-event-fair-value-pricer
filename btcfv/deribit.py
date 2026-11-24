@@ -1,5 +1,4 @@
-import json
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pandas as pd
 import requests
@@ -58,5 +57,39 @@ def option_chain(curr_price):
     return rows
 
 
+def snapshot() -> pd.DataFrame:
+    ts = datetime.now(timezone.utc)
+    idx_price = index_price()
+    option_market = option_chain(idx_price)
+    if not option_market:
+        return pd.DataFrame()
+    df = pd.DataFrame(option_market)
+    df["ts"] = ts
+    df["index_price"] = idx_price
+
+    return df.sort_values(["expiry_date", "strike_price", "option"]).reset_index(
+        drop=True
+    )
+
+
 if __name__ == "__main__":
-    print(option_chain(index_price()))
+    pd.set_option("display.width", 200)
+    df = snapshot()
+    print(
+        df[
+            [
+                "instrument",
+                "expiry_date",
+                "strike_price",
+                "mark_price",
+                "underlying_price",
+                "option",
+                "ask",
+                "bid",
+                "mark_iv",
+            ]
+        ].to_string()
+    )
+    print(
+        f"\n{len(df)} options across {df['expiry_date'].nunique()} expiries at {df['ts'].iloc[0]:%Y-%m-%d %H:%M} UTC"
+    )
