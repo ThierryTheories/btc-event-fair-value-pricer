@@ -49,4 +49,4 @@ if __name__ == "__main__":
         print(
             f"Saved {n_poly} polymarket rows, {n_dbit} deribit rows at {current.strftime("%H:%M")}"
         )
-        time.sleep(300)
+        time.sleep(300 - time.time() % 300)
